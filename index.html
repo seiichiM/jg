@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JGuessr - 日本版GeoGuessr</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        
+        /* Layouts */
+        #game-container { position: relative; width: 100%; height: 100%; display: none; }
+        #pano { width: 100%; height: 100%; background: #ddd; }
+        
+        /* Guess Map (Bottom Right) */
+        #guess-map-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            z-index: 1000;
+            background: rgba(255,255,255,0.9);
+            border: 3px solid white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: width 0.3s, height 0.3s, opacity 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+        #guess-map-container:hover { opacity: 1; }
+        #guess-map { flex: 1; border-radius: 4px; cursor: crosshair; }
+        
+        #btn-guess {
+            width: 100%;
+            padding: 10px;
+            background: #FF4081; /* JGuessr Pink */
+            color: white;
+            border: none;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 0 0 4px 4px;
+        }
+        #btn-guess:hover { background: #E91E63; }
+        #btn-guess:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* Screens */
+        .overlay-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+        }
+        
+        /* Start Screen */
+        #start-screen { display: flex; }
+        .logo { font-size: 48px; font-weight: bold; margin-bottom: 20px; color: #FF4081; text-shadow: 2px 2px #fff; }
+        .input-group { margin-bottom: 20px; width: 80%; max-width: 400px; }
+        .input-group input {
+            width: 100%; padding: 10px; font-size: 14px; border-radius: 4px; border: none; margin-top: 5px;
+        }
+        .btn-start {
+            padding: 12px 30px; font-size: 18px; background: #FF4081; color: white;
+            border: none; border-radius: 50px; cursor: pointer; transition: transform 0.1s;
+        }
+        .btn-start:hover { transform: scale(1.05); }
+        .note { font-size: 12px; color: #aaa; margin-top: 10px; line-height: 1.4; max-width: 500px;}
+
+        /* Result Screen */
+        #result-screen { display: none; }
+        .score-display { font-size: 64px; font-weight: bold; color: #FFEB3B; margin: 10px 0; }
+        .dist-display { font-size: 24px; margin-bottom: 30px; }
+        .progress-bar { width: 300px; height: 10px; background: #555; border-radius: 5px; overflow: hidden; margin: 0 auto 20px auto; }
+        .progress-fill { height: 100%; background: #FFEB3B; width: 0%; transition: width 1s ease-out; }
+
+        /* Loading */
+        #loading-overlay {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background: black; z-index: 1500; display: none;
+            justify-content: center; align-items: center; color: white;
+        }
+
+        /* Map Resizer */
+        .map-expander {
+            position: absolute; top: -30px; right: 0;
+            background: white; color: black; padding: 5px 10px;
+            font-size: 12px; border-radius: 4px 4px 0 0; cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+
+    <!-- PWA Settings -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="overlay-screen">
+        <div class="logo">JGuessr</div>
+        <p>日本版GeoGuessr - 場所を当てて高得点を目指せ！</p>
+        
+        <div class="input-group">
+            <label for="api-key">Google Maps API Key</label>
+            <input type="password" id="api-key" placeholder="AIzaSy...">
+        </div>
+        
+        <button class="btn-start" id="btn-start-game">START GAME</button>
+        
+        <div class="note">
+            ※このゲームにはGoogle Maps APIキー（Street View Static/JS API有効）が必要です。<br>
+            キーはブラウザにのみ保存され、外部に送信されることはありません。<br>
+            <a href="https://developers.google.com/maps/documentation/javascript/get-api-key" target="_blank" style="color:#4facfe;">APIキーの取得方法はこちら</a>
+        </div>
+    </div>
+
+    <!-- Result Screen -->
+    <div id="result-screen" class="overlay-screen">
+        <h2>ROUND RESULT</h2>
+        <div class="progress-bar"><div class="progress-fill" id="score-bar"></div></div>
+        <div class="score-display" id="round-score">0 pts</div>
+        <div class="dist-display" id="round-dist">0 km 離れていました</div>
+        <button class="btn-start" id="btn-next-round">次の場所へ</button>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-overlay">
+        <div>場所を探しています...</div>
+    </div>
+
+    <!-- Game Container -->
+    <div id="game-container">
+        <div id="pano"></div>
+        
+        <div id="guess-map-container">
+            <div class="map-expander" id="map-size-toggle">拡大/縮小</div>
+            <div id="guess-map"></div>
+            <button id="btn-guess" disabled>GUESS</button>
+        </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // State
+        let map, marker, guessLine, actualMarker;
+        let svService, panorama;
+        let currentLoc = { lat: 0, lng: 0 };
+        let guessLoc = null;
+        let apiKey = '';
+        let isMapLarge = false;
+
+        // Bounding Box for Japan (Roughly covering main islands to maximize hit rate)
+        // We will pick a random point in these boxes and search for nearest road
+        const REGIONS = [
+            { name: 'Hokkaido', minLat: 41.5, maxLat: 45.3, minLng: 140.0, maxLng: 145.5 },
+            { name: 'Tohoku/Kanto', minLat: 35.0, maxLat: 41.0, minLng: 139.0, maxLng: 142.0 },
+            { name: 'Chubu/Kansai', minLat: 33.5, maxLat: 37.0, minLng: 135.0, maxLng: 139.0 },
+            { name: 'Chugoku/Shikoku/Kyushu', minLat: 31.0, maxLat: 35.5, minLng: 130.0, maxLng: 134.5 },
+            { name: 'Okinawa', minLat: 26.0, maxLat: 26.9, minLng: 127.6, maxLng: 128.3 }
+        ];
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem('jguessr_apikey');
+            if (savedKey) document.getElementById('api-key').value = savedKey;
+
+            document.getElementById('btn-start-game').addEventListener('click', startGame);
+            document.getElementById('btn-guess').addEventListener('click', makeGuess);
+            document.getElementById('btn-next-round').addEventListener('click', nextRound);
+            document.getElementById('map-size-toggle').addEventListener('click', toggleMapSize);
+        });
+
+        function toggleMapSize() {
+            const container = document.getElementById('guess-map-container');
+            isMapLarge = !isMapLarge;
+            if (isMapLarge) {
+                container.style.width = '600px';
+                container.style.height = '450px';
+            } else {
+                container.style.width = '320px';
+                container.style.height = '240px';
+            }
+            setTimeout(() => { map.invalidateSize(); }, 300);
+        }
+
+        function startGame() {
+            apiKey = document.getElementById('api-key').value.trim();
+            if (!apiKey) {
+                alert('APIキーを入力してください。');
+                return;
+            }
+            localStorage.setItem('jguessr_apikey', apiKey);
+            
+            // Load Google Maps Script
+            if (typeof google === 'undefined' || !google.maps) {
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMaps`;
+                script.async = true;
+                script.defer = true;
+                script.onerror = () => alert('Google Maps APIの読み込みに失敗しました。キーを確認してください。');
+                document.body.appendChild(script);
+            } else {
+                initMaps();
+            }
+        }
+
+        function initMaps() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-container').style.display = 'block';
+
+            // Init Street View
+            panorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano'), {
+                    position: { lat: 35.681, lng: 139.767 }, // Default Tokyo
+                    pov: { heading: 34, pitch: 10 },
+                    zoom: 1,
+                    showRoadLabels: false, // Hide labels for difficulty
+                    addressControl: false,
+                    fullscreenControl: false,
+                    enableCloseButton: false
+                }
+            );
+            svService = new google.maps.StreetViewService();
+
+            // Init Leaflet Map
+            map = L.map('guess-map', {
+                center: [38.0, 137.0], // Center of Japan
+                zoom: 4,
+                attributionControl: false
+            });
+            
+            // OpenStreetMap Layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+            }).addTo(map);
+
+            // Map Click Event
+            map.on('click', function(e) {
+                if (marker) map.removeLayer(marker);
+                guessLoc = e.latlng;
+                marker = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map);
+                document.getElementById('btn-guess').disabled = false;
+            });
+
+            nextRound();
+        }
+
+        async function nextRound() {
+            document.getElementById('result-screen').style.display = 'none';
+            document.getElementById('loading-overlay').style.display = 'flex';
+            
+            // Reset Map
+            if (marker) map.removeLayer(marker);
+            if (actualMarker) map.removeLayer(actualMarker);
+            if (guessLine) map.removeLayer(guessLine);
+            guessLoc = null;
+            document.getElementById('btn-guess').disabled = true;
+            map.setView([38.0, 137.0], 4);
+
+            // Find Random Location
+            let found = false;
+            let attempts = 0;
+
+            while (!found && attempts < 10) {
+                attempts++;
+                const region = REGIONS[Math.floor(Math.random() * REGIONS.length)];
+                const rndLat = region.minLat + Math.random() * (region.maxLat - region.minLat);
+                const rndLng = region.minLng + Math.random() * (region.maxLng - region.minLng);
+                
+                try {
+                    const result = await getPanorama(rndLat, rndLng);
+                    if (result) {
+                        found = true;
+                        currentLoc = result.location.latLng;
+                        panorama.setPosition(currentLoc);
+                        panorama.setPov({ heading: Math.random() * 360, pitch: 0 });
+                    }
+                } catch (e) {
+                    console.log('Retry...', e);
+                }
+            }
+
+            document.getElementById('loading-overlay').style.display = 'none';
+            
+            if (!found) {
+                alert('場所を見つけられませんでした。もう一度試します。');
+                nextRound();
+            }
+        }
+
+        function getPanorama(lat, lng) {
+            return new Promise((resolve, reject) => {
+                // Search radius 100km (100,000m) to find nearest road
+                svService.getPanorama({ location: { lat, lng }, radius: 100000, source: google.maps.StreetViewSource.OUTDOOR }, (data, status) => {
+                    if (status === 'OK') {
+                        resolve(data);
+                    } else {
+                        reject(status);
+                    }
+                });
+            });
+        }
+
+        function makeGuess() {
+            if (!guessLoc) return;
+
+            // Calculate Distance
+            const actualLat = currentLoc.lat();
+            const actualLng = currentLoc.lng();
+            const dist = getDistanceFromLatLonInKm(actualLat, actualLng, guessLoc.lat, guessLoc.lng);
+            
+            // Calculate Score (Exponential decay)
+            // 0km = 5000pts, 2000km = 0pts roughly
+            // Using formula: 5000 * e^(-dist / 2000) is too loose? 
+            // Let's use GeoGuessr style: 5000 * e^(-10 * dist / 14000)?
+            // A simpler one: 5000 * Math.exp(-dist / 1500)
+            const score = Math.round(5000 * Math.exp(-dist / 1000));
+
+            // Show Result
+            document.getElementById('round-score').textContent = `${score} pts`;
+            document.getElementById('round-dist').textContent = `${dist.toFixed(1)} km 離れていました`;
+            document.getElementById('score-bar').style.width = `${(score / 5000) * 100}%`;
+            
+            document.getElementById('result-screen').style.display = 'flex';
+
+            // Show actual location on map
+            actualMarker = L.marker([actualLat, actualLng], {
+                icon: L.icon({
+                    iconUrl: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 32]
+                })
+            }).addTo(map);
+
+            // Draw line
+            guessLine = L.polyline([
+                [guessLoc.lat, guessLoc.lng],
+                [actualLat, actualLng]
+            ], { color: 'red', dashArray: '5, 10' }).addTo(map);
+
+            // Fit bounds
+            map.fitBounds(guessLine.getBounds(), { padding: [50, 50] });
+        }
+
+        // Haversine Formula
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+    </script>
+</body>
+</html>
