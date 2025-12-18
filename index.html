@@ -208,9 +208,11 @@
             if (isMapLarge) {
                 container.style.width = '600px';
                 container.style.height = '450px';
+                container.style.zIndex = '1600'; // Bring to front over result screen
             } else {
                 container.style.width = '320px';
                 container.style.height = '240px';
+                container.style.zIndex = '1000'; // Reset z-index
             }
             setTimeout(() => { map.invalidateSize(); }, 300);
         }
