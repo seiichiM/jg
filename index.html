@@ -74,11 +74,28 @@
         .btn-start:hover { transform: scale(1.05); }
         .note { font-size: 12px; color: #aaa; margin-top: 10px; line-height: 1.4; max-width: 500px;}
 
-        /* Result Screen */
-        #result-screen { display: none; }
-        .score-display { font-size: 64px; font-weight: bold; color: #FFEB3B; margin: 10px 0; }
-        .dist-display { font-size: 24px; margin-bottom: 30px; }
-        .progress-bar { width: 300px; height: 10px; background: #555; border-radius: 5px; overflow: hidden; margin: 0 auto 20px auto; }
+        /* Result Panel (Non-blocking) */
+        #result-screen { 
+            display: none; 
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 600px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1500;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            flex-direction: column;
+            align-items: center;
+        }
+        .score-display { font-size: 48px; font-weight: bold; color: #FFEB3B; margin: 5px 0; }
+        .dist-display { font-size: 20px; margin-bottom: 15px; }
+        .progress-bar { width: 100%; height: 10px; background: #555; border-radius: 5px; overflow: hidden; margin: 0 auto 10px auto; }
         .progress-fill { height: 100%; background: #FFEB3B; width: 0%; transition: width 1s ease-out; }
 
         /* Loading */
@@ -128,12 +145,12 @@
     </div>
 
     <!-- Result Screen -->
-    <div id="result-screen" class="overlay-screen">
+    <div id="result-screen">
         <h2>ROUND RESULT</h2>
         <div class="progress-bar"><div class="progress-fill" id="score-bar"></div></div>
         <div class="score-display" id="round-score">0 pts</div>
         <div class="dist-display" id="round-dist">0 km 離れていました</div>
-        <button class="btn-start" id="btn-next-round">次の場所へ</button>
+        <button class="btn-start" id="btn-next-round" style="padding: 8px 20px; font-size: 16px;">次の場所へ</button>
     </div>
 
     <!-- Loading -->
